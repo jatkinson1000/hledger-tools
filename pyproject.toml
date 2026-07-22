@@ -33,7 +33,6 @@ dependencies = [
 [project.optional-dependencies]
 plots = [
     "matplotlib",
-    "seaborn",
     "plotly",
     "kaleido",
 ]
@@ -88,4 +87,5 @@ convention = "numpy"
 "**/tests/*" = ["S101", "PLR2004"]
 
 [[tool.mypy.overrides]]
-follow_untyped_imports = true
+module = ["plotly.*", "seaborn.*"]
+ignore_missing_imports = true
