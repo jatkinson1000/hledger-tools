@@ -1,5 +1,7 @@
 """Utilities for manipulating hledger dataframes."""
 
+from io import StringIO
+
 import polars as pl
 
 
@@ -35,15 +37,16 @@ class HLDataFrame(pl.DataFrame):
 
     @classmethod
     def from_csv(
-        cls, csv_text: str, infer_schema: bool = False, **kwargs
+        cls, csv_text: str | StringIO, infer_schema: bool = False, **kwargs
     ) -> "HLDataFrame":
         """
         Read CSV text and return as HLDataFrame.
 
         Parameters
         ----------
-        csv_text : str
-            CSV formatted string or file path
+        csv_text : str or StringIO
+            CSV formatted string, StringIO object, or file path. Strings
+            containing newlines are treated as CSV content; others as paths.
         infer_schema : bool, default False
             Whether to infer column types. False keeps as strings (safer for hledger)
         **kwargs
@@ -54,6 +57,8 @@ class HLDataFrame(pl.DataFrame):
         HLDataFrame
             HLDataFrame instance
         """
+        if isinstance(csv_text, str) and "\n" in csv_text:
+            csv_text = StringIO(csv_text)
         return cls(pl.read_csv(csv_text, infer_schema=infer_schema, **kwargs))
 
     # ===============================
@@ -250,7 +255,10 @@ class HLDataFrame(pl.DataFrame):
         return self.__class__(
             self.with_columns(
                 [
-                    pl.col(col).str.replace(currency_symbol, "").cast(pl.Float64)
+                    pl.col(col)
+                    .str.replace_all(currency_symbol, "", literal=True)
+                    .str.replace_all(",", "")
+                    .cast(pl.Float64)
                     for col in change_cols
                     if col not in preserve_cols
                 ]
