@@ -31,6 +31,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+plots = [
+    "matplotlib",
+    "seaborn",
+    "plotly",
+    "kaleido",
+]
 test = [
     "pytest",
 ]
@@ -39,7 +45,7 @@ lint = [
     "mypy",
 ]
 dev = [
-    "hledgertools[lint,test]",
+    "hledgertools[lint,plots,test]",
 ]
 
 [project.urls]
