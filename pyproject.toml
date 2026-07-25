@@ -28,14 +28,12 @@ classifiers = [
 ]
 dependencies = [
     "polars",
-]
-
-[project.optional-dependencies]
-plots = [
     "matplotlib",
     "plotly",
     "kaleido",
 ]
+
+[project.optional-dependencies]
 test = [
     "pytest",
 ]
@@ -44,7 +42,7 @@ lint = [
     "mypy",
 ]
 dev = [
-    "hledgertools[lint,plots,test]",
+    "hledgertools[lint,test]",
 ]
 
 [project.urls]
@@ -84,8 +82,10 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 # Ignore S101 (use of assert) in tests
 # Ignore PLR2004 (magic values) in tests as we regularly compare to a numerical value
+# Ignore D102 (missing docstring in public method) in tests as test methods are self-describing
+# Ignore D104 (missing docstring in public package) in tests as test modules need no package docstring
 "**/tests/*" = ["S101", "PLR2004", "D102", "D104"]
 
 [[tool.mypy.overrides]]
-module = ["plotly.*", "seaborn.*"]
+module = ["plotly.*"]
 ignore_missing_imports = true

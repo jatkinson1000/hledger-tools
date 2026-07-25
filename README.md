@@ -5,20 +5,18 @@ data using [Polars](https://pola.rs/) DataFrames.
 
 ## Installation
 
+Install from source by cloning the repository and using `pip`:
+
 ```bash
-pip install hledgertools
+git clone https://github.com/jatkinson1000/hledger-tools.git
+cd hledger-tools
+pip install .
 ```
 
-For plotting support:
+For development (includes linting and test dependencies):
 
 ```bash
-pip install "hledgertools[plots]"
-```
-
-For development (includes linting, plotting, and test dependencies):
-
-```bash
-pip install "hledgertools[dev]"
+pip install -e ".[dev]"
 ```
 
 ## Overview
@@ -115,6 +113,22 @@ fig = plot_net_worth(monthly_balance_df)
 # Heatmap of all categories x months
 fig = plot_matrix_heatmap(monthly_df)
 ```
+
+## Assumptions
+
+The package makes several assumptions about the structure of your hledger
+ledger:
+
+- **Account hierarchy** — Accounts use the standard hledger colon-separated
+  hierarchy with top-level groups: `revenues:`, `expenses:`, `assets:`, and
+  `liabilities:`.
+- **Balance normality** — Revenue accounts carry negative balances (credit
+  normal) and expense accounts carry positive balances (debit normal), as
+  produced by hledger's `balance` command. Asset and liability accounts follow
+  their conventional normality.
+- **Expense grouping** — `plot_essentials_discretionary` groups expenses by the
+  second segment of the account name (e.g. `expenses:groceries` -> `Groceries`),
+  so expense accounts are expected to have at least two colon-separated levels.
 
 ## Development
 

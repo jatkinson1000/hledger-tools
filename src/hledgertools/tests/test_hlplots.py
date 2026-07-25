@@ -130,6 +130,22 @@ class TestPlotSankeyCashflow:
         img = fig.to_image(format="png", width=400, height=300)
         assert len(img) > 0
 
+    def test_depth_disambiguates_nodes(self):
+        df = pl.DataFrame(
+            {
+                "account": [
+                    "revenues:salary",
+                    "expenses:car:insurance",
+                    "expenses:home:insurance",
+                ],
+                "balance": ["-50000", "1000", "2000"],
+            }
+        )
+        fig = plot_sankey_cashflow(df, depth=2)
+        labels = list(fig.data[0].node.label)
+        assert "Car Insurance" in labels
+        assert "Home Insurance" in labels
+
 
 # ========================
 # Monthly categories tests
@@ -168,6 +184,23 @@ class TestPlotMonthlyCategories:
             title="My Title",
         )
         assert fig.axes[0].get_title() == "My Title"
+
+    def test_depth_disambiguates_labels(self):
+        df = pl.DataFrame(
+            {
+                "date": ["2025-04", "2025-05"],
+                "expenses:car:insurance": [100.0, 110.0],
+                "expenses:home:insurance": [200.0, 210.0],
+            }
+        )
+        fig = plot_monthly_categories(
+            df,
+            ["expenses:car:insurance", "expenses:home:insurance"],
+            depth=2,
+        )
+        labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+        assert "Car Insurance" in labels
+        assert "Home Insurance" in labels
 
     def test_filters_commodity_row(self):
         df = pl.DataFrame(

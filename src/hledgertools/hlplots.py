@@ -1,13 +1,13 @@
 """Plotting utilities for hledger data visualisation."""
 
-from __future__ import annotations
-
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
 from matplotlib import ticker
 from matplotlib.figure import Figure
+
+from hledgertools.hldataframe import HLDataFrame
 
 # ========================
 # Colour constants
@@ -21,6 +21,7 @@ _SAVINGS_COLOR = "#2ca02c"
 
 _INCOME_LINK = "rgba(44, 160, 44, 0.25)"
 _DEDUCTION_LINK = "rgba(214, 39, 40, 0.25)"
+_NET_LINK = "rgba(31, 119, 180, 0.25)"
 _EXPENSE_LINK = "rgba(255, 127, 14, 0.25)"
 _SAVINGS_LINK = "rgba(44, 160, 44, 0.25)"
 
@@ -30,42 +31,36 @@ _SAVINGS_LINK = "rgba(44, 160, 44, 0.25)"
 # ========================
 
 
-def _to_float(values: pl.Series) -> pl.Series:
-    """Convert a polars Series to Float64, stripping currency symbols and commas.
-
-    Parameters
-    ----------
-    values : pl.Series
-        Series that may contain currency-formatted strings (e.g. "£1,234.56")
-        or already-numeric values.
-
-    Returns
-    -------
-    pl.Series
-        Series cast to Float64 with currency symbols removed.
-    """
-    if values.dtype == pl.Utf8:
-        return values.str.replace_all("£", "").str.replace_all(",", "").cast(pl.Float64)
-    return values.cast(pl.Float64)
-
-
-def _clean_account_name(name: str) -> str:
+def _clean_account_name(name: str, depth: int = 1) -> str:
     """Shorten an hledger account name for display labels.
 
-    Takes the last colon-separated segment and title-cases it.
+    Takes the last ``depth`` colon-separated segments, joins them with spaces,
+    and title-cases the result. A deeper ``depth`` disambiguates accounts that
+    share a common final segment (e.g. ``car:insurance`` vs ``home:insurance``).
 
     Parameters
     ----------
     name : str
         Full hledger account name (e.g. ``"expenses:car:fuel"``).
+    depth : int, default 1
+        Number of trailing segments to keep. ``1`` yields ``"Fuel"``;
+        ``2`` yields ``"Car Fuel"``.
 
     Returns
     -------
     str
-        Cleaned display name (e.g. ``"Fuel"``).
+        Cleaned display name.
+
+    Examples
+    --------
+    >>> _clean_account_name("expenses:car:fuel")
+    'Fuel'
+    >>> _clean_account_name("expenses:car:insurance", depth=2)
+    'Car Insurance'
     """
     parts = name.split(":")
-    return parts[-1].replace("-", " ").title()
+    selected = parts[-depth:] if depth >= 1 else parts
+    return " ".join(selected).replace("-", " ").title()
 
 
 def _group_small(
@@ -103,12 +98,13 @@ def _group_small(
 # ========================
 
 
-def plot_matrix_heatmap(
+def plot_matrix_heatmap(  # noqa: PLR0913, PLR0917
     df: pl.DataFrame,
     title: str = "Values by Category and Month",
     xlabel: str = "Month",
     ylabel: str = "Category",
     cbar_label: str = "£ Value",
+    depth: int = 1,
 ) -> Figure:
     """Render a heatmap of account balances across periods.
 
@@ -129,6 +125,9 @@ def plot_matrix_heatmap(
         Label for the y-axis.
     cbar_label : str, default "£ Value"
         Label for the colour bar.
+    depth : int, default 1
+        Number of trailing account-name segments to keep for row/column
+        labels (see ``_clean_account_name``).
 
     Returns
     -------
@@ -145,14 +144,17 @@ def plot_matrix_heatmap(
 
     cleaned = df.filter(pl.col(index_col) != "commodity")
     value_cols = [c for c in cleaned.columns if c != index_col]
-    cleaned = cleaned.with_columns([_to_float(cleaned[c]).alias(c) for c in value_cols])
+    cleaned = HLDataFrame(cleaned).currency_to_number(preserve_cols={index_col})
 
     if index_col == "date":
-        row_labels = [_clean_account_name(c) for c in value_cols]
+        row_labels = [_clean_account_name(c, depth=depth) for c in value_cols]
         col_labels = cleaned[index_col].to_list()
         matrix = cleaned.select(value_cols).to_numpy().T
     else:
-        row_labels = [_clean_account_name(r[index_col]) for r in cleaned.to_dicts()]
+        row_labels = [
+            _clean_account_name(r[index_col], depth=depth)
+            for r in cleaned.to_dicts()
+        ]
         col_labels = value_cols
         matrix = cleaned.select(value_cols).to_numpy()
 
@@ -196,6 +198,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
     savings_label: str = "Savings & Investments",
     min_flow: float = 0.0,
     title: str = "Cash Flow Sankey",
+    depth: int = 1,
 ) -> go.Figure:
     """Create a Sankey diagram showing cash flow from income to expenses.
 
@@ -230,6 +233,9 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
         threshold are aggregated into an "Other" node per layer.
     title : str, default "Cash Flow Sankey"
         Title for the diagram.
+    depth : int, default 1
+        Number of trailing account-name segments to keep for node labels
+        (see ``_clean_account_name``).
 
     Returns
     -------
@@ -246,8 +252,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
         deduction_patterns = ["expenses:tax", "expenses:pension"]
     deduction_regex = "|".join(deduction_patterns)
 
-    balances = _to_float(df[balance_col])
-    work = df.with_columns(balances.alias(balance_col))
+    work = HLDataFrame(df).currency_to_number(preserve_cols={account_col})
 
     income_df = work.filter(
         pl.col(account_col).str.contains("revenues:") & (pl.col(balance_col) < 0)
@@ -277,7 +282,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
     income_items = _group_small(
         sorted(
             [
-                (_clean_account_name(r[account_col]), r[balance_col])
+                (_clean_account_name(r[account_col], depth=depth), r[balance_col])
                 for r in income_df.to_dicts()
             ],
             key=lambda x: x[1],
@@ -288,7 +293,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
     )
     deduction_items = sorted(
         [
-            (_clean_account_name(r[account_col]), r[balance_col])
+            (_clean_account_name(r[account_col], depth=depth), r[balance_col])
             for r in deduction_df.to_dicts()
         ],
         key=lambda x: x[1],
@@ -297,7 +302,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
     living_items = _group_small(
         sorted(
             [
-                (_clean_account_name(r[account_col]), r[balance_col])
+                (_clean_account_name(r[account_col], depth=depth), r[balance_col])
                 for r in living_df.to_dicts()
             ],
             key=lambda x: x[1],
@@ -375,7 +380,7 @@ def plot_sankey_cashflow(  # noqa: PLR0913, PLR0915
     link_sources.append(gross_idx)
     link_targets.append(net_idx)
     link_values.append(net_income)
-    link_colors.append("rgba(31, 119, 180, 0.25)")
+    link_colors.append(_NET_LINK)
 
     # Links: net -> living expenses
     for j, idx in enumerate(expense_indices):
@@ -433,6 +438,7 @@ def plot_monthly_categories(  # noqa: PLR0913
     figsize: tuple[float, float] = (12.0, 5.0),
     title: str | None = None,
     ylabel: str = "Amount (£)",
+    depth: int = 1,
 ) -> Figure:
     """Plot monthly expenditure for selected categories as a bar chart.
 
@@ -455,6 +461,9 @@ def plot_monthly_categories(  # noqa: PLR0913
         Chart title. If ``None``, a default is generated.
     ylabel : str, default "Amount (£)"
         Label for the y-axis.
+    depth : int, default 1
+        Number of trailing account-name segments to keep for legend labels
+        (see ``_clean_account_name``).
 
     Returns
     -------
@@ -462,6 +471,7 @@ def plot_monthly_categories(  # noqa: PLR0913
         Matplotlib Figure containing the bar chart.
     """
     cleaned = df.filter(pl.col(date_col) != "commodity")
+    cleaned = HLDataFrame(cleaned).currency_to_number(preserve_cols={date_col})
     n_months = len(cleaned)
     n_cats = len(categories)
     x = np.arange(n_months)
@@ -472,24 +482,24 @@ def plot_monthly_categories(  # noqa: PLR0913
     if kind == "stacked":
         bottom = np.zeros(n_months)
         for cat in categories:
-            values = _to_float(cleaned[cat]).to_numpy()
+            values = cleaned[cat].to_numpy()
             ax.bar(
                 x,
                 values,
                 bar_width,
                 bottom=bottom,
-                label=_clean_account_name(cat),
+                label=_clean_account_name(cat, depth=depth),
             )
             bottom += values
     else:
         for i, cat in enumerate(categories):
             offset = (i - n_cats / 2 + 0.5) * bar_width
-            values = _to_float(cleaned[cat]).to_numpy()
+            values = cleaned[cat].to_numpy()
             ax.bar(
                 x + offset,
                 values,
                 bar_width,
-                label=_clean_account_name(cat),
+                label=_clean_account_name(cat, depth=depth),
             )
 
     date_values = cleaned[date_col].to_list()
@@ -517,6 +527,7 @@ def plot_budget_vs_actual(  # noqa: PLR0913
     budget_col: str = "budget",
     figsize: tuple[float, float] = (12.0, 6.0),
     title: str | None = None,
+    depth: int = 1,
 ) -> Figure:
     """Plot actual versus budgeted amounts as a horizontal bar chart.
 
@@ -538,6 +549,9 @@ def plot_budget_vs_actual(  # noqa: PLR0913
         Figure size in inches.
     title : str, optional
         Chart title. If ``None``, a default is used.
+    depth : int, default 1
+        Number of trailing account-name segments to keep for y-axis labels
+        (see ``_clean_account_name``).
 
     Returns
     -------
@@ -555,18 +569,23 @@ def plot_budget_vs_actual(  # noqa: PLR0913
         msg = "Could not identify actual column in DataFrame."
         raise ValueError(msg)
 
-    work = df.with_columns(
-        _to_float(df[actual_col]).alias("_actual"),
-        _to_float(df[budget_col]).alias("_budget"),
-    ).filter((pl.col("_actual") != 0) | (pl.col("_budget") != 0))
+    preserve = {account_col, "Commodity"}
+    work = (
+        HLDataFrame(df)
+        .currency_to_number(preserve_cols=preserve)
+        .filter((pl.col(actual_col) != 0) | (pl.col(budget_col) != 0))
+        .with_columns(
+            (pl.col(actual_col) - pl.col(budget_col)).abs().alias("_abs_var")
+        )
+        .sort("_abs_var", descending=True)
+    )
 
-    work = work.with_columns(
-        (pl.col("_actual") - pl.col("_budget")).abs().alias("_abs_var")
-    ).sort("_abs_var", descending=True)
-
-    accounts = [_clean_account_name(r[account_col]) for r in work.to_dicts()]
-    actuals = work["_actual"].to_list()
-    budgets = work["_budget"].to_list()
+    accounts = [
+        _clean_account_name(r[account_col], depth=depth)
+        for r in work.to_dicts()
+    ]
+    actuals = work[actual_col].to_list()
+    budgets = work[budget_col].to_list()
     n = len(accounts)
     y = np.arange(n)
     bar_height = 0.35
@@ -643,8 +662,7 @@ def plot_essentials_discretionary(  # noqa: PLR0913
     Figure
         Matplotlib Figure containing the donut chart.
     """
-    balances = _to_float(df[balance_col])
-    work = df.with_columns(balances.alias(balance_col))
+    work = HLDataFrame(df).currency_to_number(preserve_cols={account_col})
 
     expense_df = work.filter(
         pl.col(account_col).str.contains("expenses:") & (pl.col(balance_col) > 0)
@@ -740,8 +758,7 @@ def plot_net_worth(  # noqa: PLR0913
         liability_cols = [c for c in cleaned.columns if c.startswith("liabilities")]
 
     all_cols = asset_cols + liability_cols
-    for col in all_cols:
-        cleaned = cleaned.with_columns(_to_float(cleaned[col]).alias(col))
+    cleaned = HLDataFrame(cleaned).currency_to_number(preserve_cols={date_col})
 
     net_expr = pl.lit(0.0)
     for col in all_cols:

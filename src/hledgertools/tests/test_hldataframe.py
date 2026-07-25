@@ -1,5 +1,7 @@
 """Tests for the HLDataFrame class."""
 
+from io import StringIO
+
 import polars as pl
 
 from hledgertools.hldataframe import HLDataFrame
@@ -65,14 +67,14 @@ class TestFromCsv:
 
     def test_from_csv_returns_hldf(self):
         csv_text = "account,balance\nexpenses:food,100.0\n"
-        df = HLDataFrame.from_csv(csv_text, infer_schema=False)
+        df = HLDataFrame.from_csv(StringIO(csv_text), infer_schema=False)
         assert isinstance(df, HLDataFrame)
         assert df.columns == ["account", "balance"]
         assert len(df) == 1
 
     def test_from_csv_with_separator(self):
         csv_text = "account;balance\nexpenses:food;100.0\n"
-        df = HLDataFrame.from_csv(csv_text, infer_schema=False, separator=";")
+        df = HLDataFrame.from_csv(StringIO(csv_text), infer_schema=False, separator=";")
         assert isinstance(df, HLDataFrame)
         assert df.columns == ["account", "balance"]
 
@@ -223,3 +225,14 @@ class TestCurrencyToNumber:
         )
         result = df.currency_to_number(preserve_cols={"account"})
         assert result["val"].to_list() == [1234.56]
+
+    def test_currency_to_number_already_float(self):
+        df = HLDataFrame(
+            {
+                "account": ["a", "b"],
+                "val": [100.0, 50.5],
+            }
+        )
+        result = df.currency_to_number(preserve_cols={"account"})
+        assert result["val"].dtype == pl.Float64
+        assert result["val"].to_list() == [100.0, 50.5]
