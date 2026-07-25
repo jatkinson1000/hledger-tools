@@ -28,6 +28,9 @@ classifiers = [
 ]
 dependencies = [
     "polars",
+    "matplotlib",
+    "plotly",
+    "kaleido",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +82,10 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 # Ignore S101 (use of assert) in tests
 # Ignore PLR2004 (magic values) in tests as we regularly compare to a numerical value
-"**/tests/*" = ["S101", "PLR2004"]
+# Ignore D102 (missing docstring in public method) in tests as test methods are self-describing
+# Ignore D104 (missing docstring in public package) in tests as test modules need no package docstring
+"**/tests/*" = ["S101", "PLR2004", "D102", "D104"]
 
 [[tool.mypy.overrides]]
-follow_untyped_imports = true
+module = ["plotly.*"]
+ignore_missing_imports = true

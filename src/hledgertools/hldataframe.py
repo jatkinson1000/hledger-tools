@@ -250,7 +250,14 @@ class HLDataFrame(pl.DataFrame):
         return self.__class__(
             self.with_columns(
                 [
-                    pl.col(col).str.replace(currency_symbol, "").cast(pl.Float64)
+                    (
+                        pl.col(col)
+                        .str.replace_all(currency_symbol, "", literal=True)
+                        .str.replace_all(",", "")
+                        .cast(pl.Float64)
+                        if self.schema[col] == pl.Utf8
+                        else pl.col(col).cast(pl.Float64)
+                    ).alias(col)
                     for col in change_cols
                     if col not in preserve_cols
                 ]
